@@ -30,7 +30,7 @@ __global__ void gemm_base_kernel(const float* A, const float* B, float* C, const
   }
 }
 
-constexpr int TILE_WIDTH = 16;
+constexpr int TILE_WIDTH = 32;
 
 // 分块优化版本的GEMM内核
 __global__ void gemm_tiling_kernel(const float* A, const float* B, float* C, const int M, const int N, const int K) {
@@ -85,19 +85,19 @@ __global__ void gemm_prefetch_kernel(const float* A, const float* B, float* C, c
   __syncthreads();
 
   float pSum = 0.f;
-  #pragma unroll 1
   for (int tile = 0; tile < numTiles; ++tile) {
-    #pragma unroll
-    for (int k = 0; k < TILE_WIDTH; ++k) {
-      pSum += As[curr][ty][k] * Bs[curr][k][tx];
-    }
-
-    // 预取下一块
+    // 先发起下一块的加载，让访存与当前块计算有机会重叠
     if (tile + 1 < numTiles) {
       kBase = (tile + 1) * TILE_WIDTH;
       As[next][ty][tx] = A[aRowBase + kBase + tx];
       Bs[next][ty][tx] = B[(kBase + ty) * N + col];
     }
+
+    #pragma unroll
+    for (int k = 0; k < TILE_WIDTH; ++k) {
+      pSum += As[curr][ty][k] * Bs[curr][k][tx];
+    }
+
     __syncthreads();
     curr ^= 1;
     next ^= 1;
