@@ -61,6 +61,7 @@ __global__ void gemm_tiling_kernel(const float* A, const float* B, float* C, con
 
 // 分块+双缓冲预取版本的GEMM内核
 __global__ void gemm_prefetch_kernel(const float* A, const float* B, float* C, const int M, const int N, const int K) {
+  // 假设维度均为TILE_WIDTH的整数倍以去掉分支，提高吞吐
   __shared__ float As[2][TILE_WIDTH][TILE_WIDTH];
   __shared__ float Bs[2][TILE_WIDTH][TILE_WIDTH];
 
@@ -71,24 +72,20 @@ __global__ void gemm_prefetch_kernel(const float* A, const float* B, float* C, c
 
   int row = by * TILE_WIDTH + ty;
   int col = bx * TILE_WIDTH + tx;
+  int aRowBase = row * K;
 
-  const int numTiles = (K + TILE_WIDTH - 1) / TILE_WIDTH;
+  const int numTiles = K / TILE_WIDTH;  // K整除TILE_WIDTH
   int curr = 0;
   int next = 1;
 
   // 预取第0块
   int kBase = 0;
-  if (row < M) {
-    int aCol = kBase + tx;
-    As[curr][ty][tx] = (aCol < K) ? A[row * K + aCol] : 0.f;
-  } else {
-    As[curr][ty][tx] = 0.f;
-  }
-  int bRow = kBase + ty;
-  Bs[curr][ty][tx] = (bRow < K && col < N) ? B[bRow * N + col] : 0.f;
+  As[curr][ty][tx] = A[aRowBase + kBase + tx];
+  Bs[curr][ty][tx] = B[(kBase + ty) * N + col];
   __syncthreads();
 
   float pSum = 0.f;
+  #pragma unroll 1
   for (int tile = 0; tile < numTiles; ++tile) {
     #pragma unroll
     for (int k = 0; k < TILE_WIDTH; ++k) {
@@ -98,23 +95,15 @@ __global__ void gemm_prefetch_kernel(const float* A, const float* B, float* C, c
     // 预取下一块
     if (tile + 1 < numTiles) {
       kBase = (tile + 1) * TILE_WIDTH;
-      if (row < M) {
-        int aColNext = kBase + tx;
-        As[next][ty][tx] = (aColNext < K) ? A[row * K + aColNext] : 0.f;
-      } else {
-        As[next][ty][tx] = 0.f;
-      }
-      int bRowNext = kBase + ty;
-      Bs[next][ty][tx] = (bRowNext < K && col < N) ? B[bRowNext * N + col] : 0.f;
+      As[next][ty][tx] = A[aRowBase + kBase + tx];
+      Bs[next][ty][tx] = B[(kBase + ty) * N + col];
     }
     __syncthreads();
     curr ^= 1;
     next ^= 1;
   }
 
-  if (row < M && col < N) {
-    C[row * N + col] = pSum;
-  }
+  C[row * N + col] = pSum;
 }
 
 float* gemm_base() {
