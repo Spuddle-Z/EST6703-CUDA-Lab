@@ -171,17 +171,17 @@ int main() {
   std::cout << "start..." << std::endl;
 
   float* mat_base = gemm_base();
-  free(mat_base);
+  delete[] mat_base;
   std::cout << "kernel base: " << t_base << "ms  TFLOPs: "
             << totalFlops / t_base / 1e9 << std::endl;
 
   float* mat_tiling = gemm_tiling();
-  free(mat_tiling);
+  delete[] mat_tiling;
   std::cout << "kernel tiling: " << t_tiling << "ms  TFLOPs: "
             << totalFlops / t_tiling / 1e9 << std::endl;
 
   float* mat_prefetch = gemm_prefetch();
-  free(mat_prefetch);
+  delete[] mat_prefetch;
   std::cout << "kernel prefetch: " << t_prefetch << "ms  TFLOPs: "
             << totalFlops / t_prefetch / 1e9 << std::endl;
 
